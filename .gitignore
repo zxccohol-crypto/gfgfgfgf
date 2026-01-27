@@ -1,0 +1,48 @@
+# Віртуальні оточення та середовища
+venv/
+env/
+.venv/
+.env/
+virtualenv/
+ENV/
+
+# Кеш Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Файли середовища (токени, паролі)
+.env
+*.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE файли
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Операційні системи
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Логи та бази даних
+*.log
+*.sql
+*.sqlite
+
+# Від компіляторів та білд-систем
+dist/
+build/
+*.egg-info/
