@@ -1,10 +1,11 @@
 """
-Telegram Bot - Готовий до розгортання бот з налаштуваннями в CONFIG
+Telegram Bot - З підтримкою Webhook для Render.com
 """
 
 import logging
 import random
 import string
+import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -12,16 +13,19 @@ from telegram.ext import (
     CallbackQueryHandler,
     ContextTypes,
 )
+from flask import Flask, request
+import asyncio
+from threading import Thread
 
 # ==================== CONFIG ====================
-import os
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # 🔑 ОБОВ'ЯЗКОВО ЗМІНИТИ
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # 🔑 Обов'язково вказати в Render Environment Variables
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")  # Буде типу: https://твоя-назва.onrender.com
+PORT = int(os.getenv("PORT", 10000))  # Render автоматично встановлює PORT
 
-MANAGER_USERNAME = "@BTCRedoManager"  # Логін менеджера для кнопок "Написати менеджеру"
+MANAGER_USERNAME = "@BTCRedoManager"
+ADMIN_USER_ID = 123456789
 
-ADMIN_USER_ID = 123456789  # Твій ID для отримання повідомлень від користувачів (опціонально)
-
-# Тексти для повідомлень (можна змінювати)
+# Тексти для повідомлень
 WELCOME_TEXT = """⚜️𝐁𝐓𝐂𝐑𝐞𝐝𝐨
 
 Статус: НОВИЧОК
@@ -34,7 +38,7 @@ ID: {user_id} | Комиссия: 50%
 
 Выберите раздел ниже 👇"""
 
-TEXT_BUTTON_1 ="""Профессиональное пространство для специалистов по отмене BTC-транзакций.
+TEXT_BUTTON_1 = """Профессиональное пространство для специалистов по отмене BTC-транзакций.
 
 Здесь работают дисциплина, качество и результат. Если вы не готовы соблюдать регламент, внимательно читать инструкции и держать коммуникацию на уровне — эта платформа не для вас.
 
@@ -49,7 +53,6 @@ TEXT_BUTTON_1 ="""Профессиональное пространство дл
 После теста можно приступать к работе.
 
 Если материалы изучены и тестирование пройдено — свяжитесь с тимлидом, чтобы получить доступ и стартовать.
-
 """
 
 TEXT_BUTTON_2 = """📚 Руководства
@@ -61,8 +64,7 @@ TEXT_BUTTON_2 = """📚 Руководства
 
 Если появились вопросы — пиши тимлиду в «Контактах»."""
 
-TEXT_BUTTON_3 = """
-📌 Правила
+TEXT_BUTTON_3 = """📌 Правила
 
 ▪️ Запрещена реклама сторонних проектов
 ▪️ Запрещена дезинформация о проекте и его деятельности
@@ -84,11 +86,7 @@ TEXT_BUTTON_5 = """Контакты
 
 👨🏻‍💻 Тимлид поможет разобраться в деталях, даст необходимые инструкции и поддержит на каждом этапе."""
 
-SUCCESS_MESSAGE = "Обратитесь к тимлиду для уточнения выплаты."
-
-POPUP_TEXT = "Успешно"
-
-# Посилання на Telegraph (можна змінювати)
+# Посилання на Telegraph
 TELEGRAPH_LINK_1_1 = "https://telegra.ph/Informaciya-o-rabote-01-19"
 TELEGRAPH_LINK_1_2 = "https://telegra.ph/MANUAL-OTMENA-TRANZAKCII-S-BITKOINOM-01-19"
 TELEGRAPH_LINK_2_1 = "https://telegra.ph/MANUAL-OTMENA-TRANZAKCII-S-BITKOINOM-01-19"
@@ -103,6 +101,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Flask app для webhook
+app = Flask(__name__)
+
+# Створюємо Application одразу
+application = Application.builder().token(BOT_TOKEN).build() if BOT_TOKEN else None
 
 
 def generate_user_id() -> str:
@@ -124,13 +127,6 @@ def get_main_keyboard() -> InlineKeyboardMarkup:
 
 
 def get_keyboard_button_1() -> InlineKeyboardMarkup:
-    """⚠️ Внимание! Здесь работают исключительно серьезные и целеустремленные люди, готовые соблюдать правила и добиваться реальных результатов.
-
-    🔴 Если ты не настроен на продуктивную работу, уважительное общение и выполнение инструкций, эта платформа не для тебя!
-
-    ✅ Мы ценим профессионализм и ответственность, по этому отнесись к сотрудничеству со всей серьезностью.
-
-    ✅ Мы гарантируем тебе стабильный поток клиентов и все необходимые инструменты для работы. Твоя задача — качественно обрабатывать трафик и зарабатывать."""
     keyboard = [
         [InlineKeyboardButton("Информация о работе", url=TELEGRAPH_LINK_1_1)],
         [InlineKeyboardButton("Руководство", url=TELEGRAPH_LINK_1_2)],
@@ -139,14 +135,8 @@ def get_keyboard_button_1() -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(keyboard)
 
+
 def get_keyboard_button_2() -> InlineKeyboardMarkup:
-    """‼️ Внимательно изучи оба представленных руководства, и выбери для себя более удобный.
-
-    ⚠️ Обязательно проверь отмену транзакций на своих кошельках.
-
-    📌 Не забывай изучить руководство по обработке мамонта — оно значительно упростит тебе работу и поможет эффективно закрывать мамонтов.
-
-    ❓ Возникшие вопросы задавай ➡️ Тимлиду (https://t.me/BTCRefundLeader)"""
     keyboard = [
         [InlineKeyboardButton("Руководство по отмене с пк", url=TELEGRAPH_LINK_2_1)],
         [InlineKeyboardButton("Руководство по обработке мамонта", url=TELEGRAPH_LINK_2_2)],
@@ -155,25 +145,22 @@ def get_keyboard_button_2() -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(keyboard)
 
+
 def get_keyboard_button_3() -> InlineKeyboardMarkup:
-    """Клавіатура для кнопки 3"""
     keyboard = [
         [InlineKeyboardButton("Назад", callback_data="back_main")],
     ]
     return InlineKeyboardMarkup(keyboard)
+
 
 def get_keyboard_button_4() -> InlineKeyboardMarkup:
-    """Клавіатура для кнопки 4"""
     keyboard = [
         [InlineKeyboardButton("Назад", callback_data="back_main")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def get_keyboard_button_5() -> InlineKeyboardMarkup:
-    """✉️ Если у тебя возникли вопросы по рабочему процессу, сложности или требуется дополнительная информация — смело обращайтесь к тимлиду.
 
-    👨🏻‍💻 Тимлид поможет разобраться в деталях, предоставит необходимые инструкции и окажет поддержку на всех этапах работы."""
-    
+def get_keyboard_button_5() -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton("Связаться с тимлидом", url=f"https://t.me/{MANAGER_USERNAME.lstrip('@')}")],
         [InlineKeyboardButton("Назад", callback_data="back_main")],
@@ -184,7 +171,6 @@ def get_keyboard_button_5() -> InlineKeyboardMarkup:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обробник команди /start"""
     user_id = generate_user_id()
-    # Зберігаємо ID користувача для подальшого використання
     context.user_data['user_id'] = user_id
     
     welcome_message = WELCOME_TEXT.format(user_id=user_id)
@@ -203,7 +189,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     data = query.data
     
-    # Повернення в головне меню
     if data == "back_main":
         user_id = context.user_data.get('user_id', generate_user_id())
         welcome_message = WELCOME_TEXT.format(user_id=user_id)
@@ -214,7 +199,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
     
-    # Кнопка 1
     elif data == "btn_1":
         keyboard = get_keyboard_button_1()
         await query.edit_message_text(
@@ -222,7 +206,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             reply_markup=keyboard
         )
     
-    # Кнопка 2
     elif data == "btn_2":
         keyboard = get_keyboard_button_2()
         await query.edit_message_text(
@@ -230,7 +213,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             reply_markup=keyboard
         )
     
-    # Кнопка 3
     elif data == "btn_3":
         keyboard = get_keyboard_button_3()
         await query.edit_message_text(
@@ -238,7 +220,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             reply_markup=keyboard
         )
     
-    # Кнопка 4
     elif data == "btn_4":
         keyboard = get_keyboard_button_4()
         await query.edit_message_text(
@@ -246,7 +227,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             reply_markup=keyboard
         )
     
-    # Кнопка 5
     elif data == "btn_5":
         keyboard = get_keyboard_button_5()
         await query.edit_message_text(
@@ -255,28 +235,73 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
 
 
-
-
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обробник помилок"""
     logger.error(f"Update {update} caused error {context.error}")
 
 
-def main() -> None:
-    """Головна функція запуску бота"""
-    # Створюємо Application
-    application = Application.builder().token(BOT_TOKEN).build()
+# ==================== FLASK ROUTES ====================
+
+@app.route('/')
+def index():
+    """Health check endpoint"""
+    return 'Bot is running! ✅', 200
+
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Webhook endpoint для отримання оновлень від Telegram"""
+    if request.method == "POST":
+        update = Update.de_json(request.get_json(force=True), application.bot)
+        asyncio.run(application.process_update(update))
+    return 'ok'
+
+
+# ==================== MAIN ====================
+
+async def setup_webhook():
+    """Налаштування webhook"""
+    if not application:
+        logger.error("❌ Application не створено - перевір BOT_TOKEN!")
+        return
+    
+    if not WEBHOOK_URL:
+        logger.error("❌ WEBHOOK_URL не встановлено!")
+        return
     
     # Додаємо обробники
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_error_handler(error_handler)
     
-    # Запускаємо бота
-    logger.info("Бот запущено!")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Ініціалізуємо бота
+    await application.initialize()
+    await application.start()
+    
+    webhook_url = f"{WEBHOOK_URL}/webhook"
+    await application.bot.set_webhook(url=webhook_url)
+    logger.info(f"🚀 Бот запущено на webhook режимі!")
+    logger.info(f"🌐 Webhook URL: {webhook_url}")
+    logger.info(f"🔌 Port: {PORT}")
+
+
+def main() -> None:
+    """Головна функція - для локального запуску"""
+    # Перевірка наявності токена
+    if not BOT_TOKEN:
+        logger.error("❌ BOT_TOKEN не встановлено!")
+        return
+    
+    if not WEBHOOK_URL:
+        logger.error("❌ WEBHOOK_URL не встановлено!")
+        return
+    
+    # Налаштовуємо webhook
+    asyncio.run(setup_webhook())
+    
+    # Запускаємо Flask
+    app.run(host='0.0.0.0', port=PORT)
 
 
 if __name__ == '__main__':
     main()
-
